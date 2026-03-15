@@ -95,7 +95,7 @@ public class ConfigApiServiceImpl extends ConfigApiService {
   		request.put("ID_Operation", "1234");
   		request.put("Operation", "add");
   		//request.put("Exclude_Node", null);
-  		//request.put("OF", null);
+  		request.put("OF", "1002");
   		//request.put("m", null);
   		//request.put("ERO", null);
   		request.put("remoteAddr", "COP Protocol");
@@ -155,8 +155,61 @@ public class ConfigApiServiceImpl extends ConfigApiService {
       @Override
       public Response deleteCallsCallCallById(String callId)
       throws NotFoundException {
+          // todo FIXME: 这里的删除逻辑需要完善，至少要根据 callId 查出原来建路时的 Source 和 Dest，才能正确触发底层 Workflow 的删除操作。
+          log.info("Received DELETE request for callId: " + callId);
+
+          String workflowParam = "L0ProvisioningCOPWF";
+
+          // 组装删除请求参数
+          Hashtable<String, String> request = new Hashtable<String, String>();
+          // 注意：ID_Operation 需要和创建时保持一致，或者从数据库/OPTable中根据 callId 查出来
+          request.put("ID_Operation", "1234");
+
+          // 【关键】将操作类型从 "add" 改为 "del"
+          request.put("Operation", "del");
+          request.put("OF", "1002");
+          request.put("remoteAddr", "COP Protocol");
+
+          // 注意：删除时，底层 Workflow 可能依然需要 Source 和 Dest 节点信息。
+          // 在完善的系统中，你应该通过 callId 去 OPtable 里查出原来建路时的 Source 和 Dest。
+          // 这里为了测试，先写死或假设 Workflow 支持仅靠 ID 删除。
+          request.put("Source_Node", "172.18.1.4");
+          request.put("Destination_Node", "172.18.2.5");
+
+          String response = null;
+          Class<?> act;
+          try {
+              act = Class.forName("es.tid.abno.modules.workflows." + workflowParam);
+
+              @SuppressWarnings("rawtypes")
+              Class[] cArg = new Class[5];
+              cArg[0] = Hashtable.class;
+              cArg[1] = String.class;
+              cArg[2] = LinkedList.class;
+              cArg[3] = ABNOParameters.class;
+              cArg[4] = HashMap.class;
+
+              Object[] args = new Object[5];
+              args[0] = request;
+              args[1] = response;
+              args[2] = ABNOCOPController.getPath_Computationlist();
+              args[3] = ABNOCOPController.getParams();
+              args[4] = ABNOCOPController.getOPtable();
+
+              WorkflowCOP workflow = (WorkflowCOP) act.getDeclaredConstructor(cArg).newInstance(args);
+
+              // 触发底层发送 PCInitiate (Remove) 报文
+              workflow.handleRequest();
+              response = workflow.getResponse();
+          } catch (Exception e1) {
+              log.error(UtilsFunctions.exceptionToString(e1));
+              return Response.serverError().entity(new ApiResponseMessage(ApiResponseMessage.ERROR, "Delete Failed")).build();
+          }
+
+          log.info("Delete response: " + response);
+          return Response.ok().entity(new ApiResponseMessage(ApiResponseMessage.OK, "Deleted OK")).build();
       // do some magicoo1!
-      return Response.ok().entity(new ApiResponseMessage(ApiResponseMessage.OK, "magicoo1!")).build();
+//      return Response.ok().entity(new ApiResponseMessage(ApiResponseMessage.OK, "magicoo1!")).build();
   }
   
       @Override
